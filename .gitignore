@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+.build/
+*.js.map
+
+# Serverless Framework
+.serverless/
+.serverless_plugins/
+
+# LocalStack
+.localstack/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.development
+.env.staging
+.env.production
+
+# AWS credentials / config (never commit)
+.aws/
+aws-exports.js
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Misc
+*.pem
+*.key
+*.cert
