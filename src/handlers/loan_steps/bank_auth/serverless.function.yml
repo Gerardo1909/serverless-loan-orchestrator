@@ -1,0 +1,2 @@
+handler: src/handlers/loan_steps/bank_auth/bank-auth-handler.handler
+description: Verifies applicant bank identity (KYC)

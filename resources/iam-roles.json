@@ -1,0 +1,51 @@
+{
+    "_comment": "Documento de referencia del principio de mínimo privilegio aplicado a cada Lambda. Los iamRoleStatements reales están en serverless.yml bajo cada función.",
+    "functions": {
+        "getLoanStatus": {
+            "reason": "Solo consulta el estado de un préstamo. GetItem sobre la clave primaria es suficiente. Nunca escribe — cualquier permiso de escritura sería exceso de privilegio.",
+            "permissions": {
+                "dynamodb": ["GetItem"]
+            }
+        },
+        "formHandler": {
+            "reason": "Crea el registro inicial del préstamo (PutItem) y actualiza el ARN de la ejecución SF (UpdateItem). Inicia la State Machine (StartExecution). No necesita leer ni borrar.",
+            "permissions": {
+                "dynamodb": ["PutItem", "UpdateItem"],
+                "states": ["StartExecution"]
+            }
+        },
+        "bankAuthHandler": {
+            "reason": "Verifica que el usuario que solicita el préstamo es válido y autorizado ante una institución bancaria. Accede a DynamoDB para actualizar el estado del préstamo con la validación del usuario (UpdateItem) y a Secrets Manager para credenciales del proveedor.",
+            "permissions": {
+                "dynamodb": ["UpdateItem"],
+                "secretsmanager": ["GetSecretValue"]
+            }
+        },
+        "userRiskHandler": {
+            "reason": "Calcula el nivel de riesgo del usuario basado en su historial de préstamos y otros factores. Accede a DynamoDB para agregar el nivel de riesgo del usuario y actualizar el estado del préstamo con la decisión sobre la aprobación del préstamo (UpdateItem).",
+            "permissions": {
+                "dynamodb": ["UpdateItem"]
+            }
+        },
+        "firmHandler": {
+            "reason": "Maneja la recepción y registro de firma de los usuarios para aprobar el préstamo. Accede a DynamoDB para actualizar el estado del préstamo.",
+            "permissions": {
+                "dynamodb": ["UpdateItem"],
+                "secretsmanager": ["GetSecretValue"]
+            }
+        },
+        "fundingJobProducer": {
+            "reason": "Publica un mensaje a SQS con el loanId para que el funding-handler lo procese. Solo produce mensajes — nunca consume ni necesita acceso a DynamoDB.",
+            "permissions": {
+                "sqs": ["SendMessage"]
+            }
+        },
+        "fundingHandler": {
+            "reason": "Consume mensajes de SQS (ReceiveMessage + DeleteMessage + GetQueueAttributes para el trigger). Actualiza el estado del préstamo en DynamoDB al completar el desembolso.",
+            "permissions": {
+                "dynamodb": ["UpdateItem"],
+                "sqs": ["ReceiveMessage", "DeleteMessage", "GetQueueAttributes"]
+            }
+        }
+    }
+}

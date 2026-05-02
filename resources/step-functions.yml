@@ -1,0 +1,88 @@
+# Definición de la State Machine de orquestación de préstamos.
+# Referenciada desde serverless.yml bajo stepFunctions.stateMachines.
+#
+# Por qué Step Functions y no invocación directa entre Lambdas:
+# Elimina el acoplamiento fuerte entre funciones, provee historial de
+# ejecución auditable y maneja reintentos/errores de forma declarativa.
+#
+# Por qué tipo Standard (no Express):
+# Standard conserva el historial de cada ejecución hasta 90 días,
+# lo cual es esencial para auditoría en un sistema financiero.
+# Express es más barato pero efímero — inapropiado para préstamos.
+
+loanOrchestrator:
+    name: ${self:custom.stateMachineName}
+    definition:
+        Comment: >
+            Loan origination workflow: KYC → Risk → Signature → Disbursement.
+            Cada estado enriquece el payload compartido usando ResultPath,
+            preservando los datos originales del préstamo en todo momento.
+        StartAt: VerifyBankIdentity
+        States:
+            VerifyBankIdentity:
+                # KYC: confirma la identidad del solicitante antes de cualquier evaluación.
+                # Es el primer paso porque todos los estados posteriores requieren
+                # una identidad verificada. Si falla aquí, no se incurre en costos
+                # de scoring crediticio.
+                # ResultPath "$.bankAuth" preserva el payload original del loan.
+                Type: Task
+                Resource:
+                    Fn::GetAtt: [BankAuthHandlerLambdaFunction, Arn]
+                ResultPath: "$.bankAuth"
+                Next: EvaluateRisk
+
+            EvaluateRisk:
+                # Scoring crediticio: produce riskScore y approved boolean.
+                # Se ejecuta solo después de KYC exitoso para evitar
+                # consumo innecesario del servicio de scoring.
+                Type: Task
+                Resource:
+                    Fn::GetAtt: [UserRiskHandlerLambdaFunction, Arn]
+                ResultPath: "$.riskEval"
+                Next: CheckRiskDecision
+
+            CheckRiskDecision:
+                # Bifurcación sobre riskEval.approved sin invocar una Lambda.
+                # Es un Choice (no Task) porque es una decisión puramente sobre datos:
+                # no requiere I/O, no tiene efectos secundarios, y no justifica
+                # el costo de una invocación adicional.
+                Type: Choice
+                Choices:
+                    - Variable: "$.riskEval.approved"
+                      BooleanEquals: true
+                      Next: WaitForSignature
+                Default: LoanRejected
+
+            WaitForSignature:
+                # Genera el contrato digital y registra la firma.
+                # En producción usará el patrón .waitForTaskToken para pausar
+                # la SM hasta que el solicitante firme activamente el contrato,
+                # en lugar de continuar inmediatamente con una firma simulada.
+                Type: Task
+                Resource:
+                    Fn::GetAtt: [FirmHandlerLambdaFunction, Arn]
+                ResultPath: "$.signature"
+                Next: InitiateDisbursement
+
+            InitiateDisbursement:
+                # Encola el job de desembolso en SQS en lugar de procesarlo aquí.
+                # Esto desacopla el desembolso (operación lenta y fallible) de la SM:
+                # el Worker de SQS puede reintentar de forma independiente sin afectar
+                # el estado de la ejecución de Step Functions.
+                Type: Task
+                Resource:
+                    Fn::GetAtt: [FundingJobProducerLambdaFunction, Arn]
+                ResultPath: "$.disbursement"
+                Next: LoanDisbursed
+
+            LoanDisbursed:
+                # Terminal de éxito: el préstamo fue aprobado y el desembolso iniciado.
+                Type: Succeed
+
+            LoanRejected:
+                # Terminal de fallo explícito (no Succeed) para que Step Functions
+                # dispare métricas de error en CloudWatch y sea visible en el console.
+                # Un estado Succeed ocultaría el rechazo como si fuera un éxito.
+                Type: Fail
+                Cause: "Loan rejected due to risk assessment"
+                Error: "LoanRejected"

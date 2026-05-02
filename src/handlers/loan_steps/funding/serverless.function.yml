@@ -1,0 +1,32 @@
+fundingJobProducer:
+    handler: src/handlers/loan_steps/funding/funding-job-producer.handler
+    description: Enqueues disbursement job to SQS
+    iamRoleStatements:
+        - Effect: Allow
+          Action:
+              - sqs:SendMessage
+          Resource:
+              Fn::GetAtt: [DisbursementQueue, Arn]
+
+fundingHandler:
+    handler: src/handlers/loan_steps/funding/funding-handler.handler
+    description: Processes loan disbursement from SQS
+    iamRoleStatements:
+        - Effect: Allow
+          Action:
+              - dynamodb:UpdateItem
+          Resource:
+              Fn::GetAtt: [LoanTable, Arn]
+        - Effect: Allow
+          Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+          Resource:
+              Fn::GetAtt: [DisbursementQueue, Arn]
+    events:
+        - sqs:
+              arn:
+                  Fn::GetAtt: [DisbursementQueue, Arn]
+              batchSize: 1
+              functionResponseType: ReportBatchItemFailures

@@ -1,0 +1,29 @@
+Resources:
+    # Cola principal para jobs de desembolso.
+    # El uso de SQS desacopla el proceso de desembolso de Step Functions:
+    # si el simulador bancario falla, el mensaje se reintenta automáticamente
+    # sin necesidad de reiniciar toda la ejecución de la State Machine.
+    DisbursementQueue:
+        Type: AWS::SQS::Queue
+        Properties:
+            QueueName: ${self:custom.disbursementQueueName}
+            # VisibilityTimeout mayor que el timeout de funding-handler (default 30s).
+            # 180s da margen para que el simulador bancario responda lentamente
+            # antes de que el mensaje sea re-entregado a otro consumidor.
+            VisibilityTimeout: 180
+            RedrivePolicy:
+                deadLetterTargetArn:
+                    Fn::GetAtt: [DisbursementDLQ, Arn]
+                # Después de 3 intentos fallidos el mensaje va al DLQ.
+                # 3 reintentos antes de DLQ balancea tolerancia a fallos transitorios
+                # con tiempo de detección de fallos permanentes.
+                maxReceiveCount: 3
+
+    # Dead-Letter Queue para desembolsos que fallaron en los 3 intentos.
+    # Retención de 14 días para permitir diagnóstico manual y eventual reprocesamiento.
+    # Los mensajes en DLQ representan desembolsos que requieren intervención humana.
+    DisbursementDLQ:
+        Type: AWS::SQS::Queue
+        Properties:
+            QueueName: ${self:custom.disbursementQueueName}-dlq
+            MessageRetentionPeriod: 1209600 # 14 días en segundos
