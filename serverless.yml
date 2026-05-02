@@ -1,0 +1,163 @@
+service: serverless-loan-orchestrator
+frameworkVersion: "4"
+
+plugins:
+    - serverless-step-functions
+    - serverless-localstack
+
+provider:
+    name: aws
+    runtime: nodejs20.x
+    region: us-east-1
+    stage: ${opt:stage, 'dev'}
+    environment:
+        STAGE: ${self:provider.stage}
+        LOAN_TABLE_NAME: ${self:custom.loanTableName}
+        LOAN_STATE_MACHINE_ARN: arn:aws:states:${self:provider.region}:${self:custom.resolvedAccountId}:stateMachine:${self:custom.stateMachineName}
+        DISBURSEMENT_QUEUE_URL: !Ref DisbursementQueue
+    iam:
+        role:
+            statements:
+                - Effect: Allow
+                  Action:
+                      - dynamodb:PutItem
+                      - dynamodb:GetItem
+                      - dynamodb:UpdateItem
+                      - dynamodb:Query
+                  Resource:
+                      - !GetAtt LoanTable.Arn
+                      - !Sub "${LoanTable.Arn}/index/*"
+                - Effect: Allow
+                  Action:
+                      - states:StartExecution
+                  Resource: arn:aws:states:${self:provider.region}:${self:custom.resolvedAccountId}:stateMachine:${self:custom.stateMachineName}
+                - Effect: Allow
+                  Action:
+                      - sqs:SendMessage
+                      - sqs:ReceiveMessage
+                      - sqs:DeleteMessage
+                      - sqs:GetQueueAttributes
+                  Resource: !GetAtt DisbursementQueue.Arn
+
+build:
+    esbuild:
+        bundle: true
+        minify: false
+        sourcemap: true
+        target: node20
+        external:
+            - "@aws-sdk/*"
+
+custom:
+    loanTableName: ${self:service}-loan-table-${self:provider.stage}
+    stateMachineName: ${self:service}-loan-orchestrator-${self:provider.stage}
+    disbursementQueueName: ${self:service}-disbursement-${self:provider.stage}
+    resolvedAccountId: ${env:AWS_ACCOUNT_ID, "000000000000"}
+    localstack:
+        stages:
+            - local
+        host: http://localhost
+        edgePort: 4566
+        autostart: false
+        lambda:
+            mountCode: false
+        docker:
+            sudo: false
+
+functions:
+    formHandler:
+        handler: src/handlers/loans/form-handler.handler
+        description: Receives and validates loan application form
+        events:
+            - http:
+                  path: /loans
+                  method: post
+                  cors: true
+
+    bankAuthHandler:
+        handler: src/handlers/loans/bank-auth-handler.handler
+        description: Verifies applicant bank identity (KYC)
+
+    userRiskHandler:
+        handler: src/handlers/loans/user-risk-handler.handler
+        description: Evaluates applicant credit risk
+
+    firmHandler:
+        handler: src/handlers/loans/firm-handler.handler
+        description: Handles loan contract signing
+
+    fundingJobProducer:
+        handler: src/handlers/loans/funding-job-producer.handler
+        description: Enqueues disbursement job to SQS
+
+    fundingHandler:
+        handler: src/handlers/loans/funding-handler.handler
+        description: Processes loan disbursement from SQS
+        events:
+            - sqs:
+                  arn: !GetAtt DisbursementQueue.Arn
+                  batchSize: 1
+                  functionResponseType: ReportBatchItemFailures
+
+stepFunctions:
+    stateMachines:
+        loanOrchestrator:
+            name: ${self:custom.stateMachineName}
+            definition:
+                Comment: "Loan origination workflow"
+                StartAt: VerifyBankIdentity
+                States:
+                    VerifyBankIdentity:
+                        Type: Task
+                        Resource:
+                            Fn::GetAtt: [BankAuthHandlerLambdaFunction, Arn]
+                        ResultPath: "$.bankAuth"
+                        Next: EvaluateRisk
+                    EvaluateRisk:
+                        Type: Task
+                        Resource:
+                            Fn::GetAtt: [UserRiskHandlerLambdaFunction, Arn]
+                        ResultPath: "$.riskEval"
+                        Next: CheckRiskDecision
+                    CheckRiskDecision:
+                        Type: Choice
+                        Choices:
+                            - Variable: "$.riskEval.approved"
+                              BooleanEquals: true
+                              Next: WaitForSignature
+                        Default: LoanRejected
+                    WaitForSignature:
+                        Type: Task
+                        Resource:
+                            Fn::GetAtt: [FirmHandlerLambdaFunction, Arn]
+                        ResultPath: "$.signature"
+                        Next: InitiateDisbursement
+                    InitiateDisbursement:
+                        Type: Task
+                        Resource:
+                            Fn::GetAtt: [FundingJobProducerLambdaFunction, Arn]
+                        ResultPath: "$.disbursement"
+                        Next: LoanDisbursed
+                    LoanDisbursed:
+                        Type: Succeed
+                    LoanRejected:
+                        Type: Fail
+                        Cause: "Loan rejected due to risk assessment"
+                        Error: "LoanRejected"
+
+resources:
+    - ${file(resources/dynamo-table.yml)}
+    - Resources:
+          DisbursementQueue:
+              Type: AWS::SQS::Queue
+              Properties:
+                  QueueName: ${self:custom.disbursementQueueName}
+                  VisibilityTimeout: 180
+                  RedrivePolicy:
+                      deadLetterTargetArn: !GetAtt DisbursementDLQ.Arn
+                      maxReceiveCount: 3
+          DisbursementDLQ:
+              Type: AWS::SQS::Queue
+              Properties:
+                  QueueName: ${self:custom.disbursementQueueName}-dlq
+                  MessageRetentionPeriod: 1209600
