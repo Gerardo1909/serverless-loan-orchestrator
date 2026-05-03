@@ -1,2 +1,0 @@
-handler: src/handlers/loan_steps/firm/firm-handler.handler
-description: Handles loan contract signing

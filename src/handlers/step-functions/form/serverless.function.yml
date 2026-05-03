@@ -1,0 +1,18 @@
+handler: src/handlers/step-functions/form/form.handler.handler
+description: Receives and validates loan application form
+iamRoleStatements:
+    - Effect: Allow
+      Action:
+          - dynamodb:PutItem
+          - dynamodb:UpdateItem
+      Resource:
+          - Fn::GetAtt: [LoanTable, Arn]
+    - Effect: Allow
+      Action:
+          - states:StartExecution
+      Resource: arn:aws:states:${self:provider.region}:${self:custom.resolvedAccountId}:stateMachine:${self:custom.stateMachineName}
+events:
+    - http:
+          path: /loans
+          method: post
+          cors: true

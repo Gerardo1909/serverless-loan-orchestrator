@@ -1,4 +1,4 @@
-import type { ILoanRepository } from '../../domain/repositories/loan-repository';
+import type { ILoanRepository } from '../ports/loan-repository.port';
 
 export interface GetLoanStatusOutput {
   loanId: string;

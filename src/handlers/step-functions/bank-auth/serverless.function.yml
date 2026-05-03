@@ -1,0 +1,2 @@
+handler: src/handlers/step-functions/bank-auth/bank-auth.handler.handler
+description: Verifies applicant bank identity (KYC)

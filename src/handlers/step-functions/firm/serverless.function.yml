@@ -1,0 +1,2 @@
+handler: src/handlers/step-functions/firm/firm.handler.handler
+description: Handles loan contract signing

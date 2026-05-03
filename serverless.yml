@@ -50,13 +50,13 @@ custom:
             sudo: false
 
 functions:
-    formHandler: ${file(src/handlers/loan_steps/form/serverless.function.yml)}
-    getLoanStatus: ${file(src/handlers/loans/get_status/serverless.function.yml)}
-    bankAuthHandler: ${file(src/handlers/loan_steps/bank_auth/serverless.function.yml)}
-    userRiskHandler: ${file(src/handlers/loan_steps/user_risk/serverless.function.yml)}
-    firmHandler: ${file(src/handlers/loan_steps/firm/serverless.function.yml)}
-    fundingJobProducer: ${file(src/handlers/loan_steps/funding/serverless.function.yml):fundingJobProducer}
-    fundingHandler: ${file(src/handlers/loan_steps/funding/serverless.function.yml):fundingHandler}
+    formHandler: ${file(src/handlers/step-functions/form/serverless.function.yml)}
+    getLoanStatus: ${file(src/handlers/http/loans/get-status/serverless.function.yml)}
+    bankAuthHandler: ${file(src/handlers/step-functions/bank-auth/serverless.function.yml)}
+    userRiskHandler: ${file(src/handlers/step-functions/user-risk/serverless.function.yml)}
+    firmHandler: ${file(src/handlers/step-functions/firm/serverless.function.yml)}
+    fundingJobProducer: ${file(src/handlers/step-functions/funding/serverless.function.yml):fundingJobProducer}
+    fundingHandler: ${file(src/handlers/step-functions/funding/serverless.function.yml):fundingHandler}
 
 # La definición de la State Machine vive en resources/step-functions.yml
 # para mantener este archivo legible y los comentarios de arquitectura

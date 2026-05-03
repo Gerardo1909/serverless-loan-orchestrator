@@ -1,0 +1,2 @@
+handler: src/handlers/step-functions/user-risk/user-risk.handler.handler
+description: Evaluates applicant credit risk

@@ -1,0 +1,13 @@
+handler: src/handlers/http/loans/get-status/get-status.handler.handler
+description: Returns current status of a loan application
+iamRoleStatements:
+    - Effect: Allow
+      Action:
+          - dynamodb:GetItem
+      Resource:
+          Fn::GetAtt: [LoanTable, Arn]
+events:
+    - http:
+          path: /loans/{loanId}
+          method: get
+          cors: true
